@@ -1,0 +1,130 @@
+---
+title: "01_data_wrangling"
+format: html
+editor: visual
+---
+
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(janitor)
+```
+# Lets load training data 
+```{r train_trait}
+train_trait <- read_csv("../data/raw/training_trait.csv") %>% clean_names()
+```
+```{r}
+trait_raw <- train_trait %>%
+  filter(site == "NYH1", year == 2015) %>%
+  select(hybrid, date_planted, date_harvested, yield_mg_ha, grain_moisture) %>%
+  slice(1:10)
+```
+So, we have NAs for the date harvested so for now we will keep this. 
+
+```{r}
+summary(train_trait)
+```
+
+
+```{r train_meta}
+train_meta  <- read_csv("../data/raw/training_meta.csv")%>% clean_names()
+```
+```{r}
+summary(train_meta)
+```
+```{r}
+unique(train_meta$site)
+```
+
+
+```{r train_soil}
+train_soil  <- read_csv("../data/raw/training_soil.csv") %>% clean_names()
+```
+
+```{r}
+summary(train_soil)
+```
+## Data wrangling 
+
+```{r parse the dates}
+library(readr)  # for parse_date()
+
+trait <- train_trait %>%
+  mutate(
+    date_planted = parse_date(date_planted, format = "%m/%d/%y"),
+    date_harvested = parse_date(date_harvested, format = "%m/%d/%y")
+  )
+
+
+```
+```{r trait clean}
+summary(trait)
+
+```
+
+```{r recheck trait clean}
+# Lets count missing by site and year
+trait %>%
+  filter(is.na(date_harvested)) %>%
+  count(site, year, sort = TRUE)
+
+```
+
+```{r train meta wrangling}
+
+meta <- train_meta %>%
+  summarise(
+    min_lat = min(latitude, na.rm = TRUE),
+    max_lat = max(latitude, na.rm = TRUE),
+    min_lon = min(longitude, na.rm = TRUE),
+    max_lon = max(longitude, na.rm = TRUE),
+    n_missing_lat = sum(is.na(latitude)),
+    n_missing_lon = sum(is.na(longitude))
+  )
+
+```
+
+From summary we can say that **max_lon = 9.94** is incorrect — longitude values in the U.S. should always be negative.
+
+
+```{r}
+library(sf)
+library(mapview)
+
+# Convert to spatial object without filtering
+train_meta_sf <- train_meta %>%
+  mutate(across(c(longitude, latitude), as.numeric)) %>%
+  filter(!is.na(longitude), !is.na(latitude)) %>%  # just remove NAs for mapview to work
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+# View all points (good and bad)
+mapview(train_meta_sf, zcol = "site")
+
+```
+```{r}
+#install.packages("ggrepel")
+library(ggrepel)
+# Convert to sf and add lat/lon columns for text labels
+train_meta_sf <- train_meta %>%
+  mutate(across(c(longitude, latitude), as.numeric)) %>%
+  filter(!is.na(longitude), !is.na(latitude)) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+  mutate(
+    lon = st_coordinates(.)[, 1],
+    lat = st_coordinates(.)[, 2]
+  )
+
+# Static map with labels
+ggplot(train_meta_sf) +
+  geom_sf(color = "blue", size = 2, alpha = 0.7) +
+  geom_text_repel(aes(x = lon, y = lat, label = site), size = 3, color = "black", max.overlaps = 50) +
+  labs(
+    title = "Corn Variety Trial Site Locations (2014–2023)",
+    caption = "Source: training_meta.csv"
+  ) +
+  theme_minimal() +
+  coord_sf(xlim = c(-130, -60), ylim = c(25, 50), expand = FALSE)
+```
+
+
