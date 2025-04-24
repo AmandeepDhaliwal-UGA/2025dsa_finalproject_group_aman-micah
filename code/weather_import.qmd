@@ -32,7 +32,8 @@ summary(field)
 ```
 
 ```{r deleting Germany}
-fieldw <- filter(field, longitude < 0)
+fieldw <- filter(field, longitude < 0) %>%
+  select(-previous_crop)
 summary(fieldw)
 ```
 
@@ -95,12 +96,14 @@ daymet_all_unnest <- daymet_all %>%
   pivot_wider(names_from = measurement,
               values_from = value
               ) %>%
-  janitor::clean_names()
+  janitor::clean_names() %>%
+  unnest()
+
 
 daymet_all_unnest
 
-
 ```
+
 
  
 ```{r save partially cleaned weather data}
@@ -110,25 +113,35 @@ write_csv(daymet_all_unnest,
 ```
 
 
-# Summary  
-In this exercise, we:  
-  - Used year, longitude, and latitude to pull daily weather data from Daymet  
-  - Wrote code to automate and iterate this process for 698 site-years  
-  - Exported the data for future reuse  
+# Install degday   
+```{r}
+options(repos = c(ajlyons = 'https://ajlyons.r-universe.dev',
+                  CRAN = 'https://cloud.r-project.org'))
+install.packages('degday')
 
-# Other open-source data APIs in R  
-There are MANY open-source data APIs relevant for agriculture applications, most of which have an R implementation.  
+library(degday)
+```
+```{r import weather as fresh dataset}
+weatherpre <- read.csv("../data/weather_partial.csv")
 
-Some of the ones I used in the past:  
-  - **USDA NASS crop statistics**: https://cran.r-project.org/web/packages/rnassqs/vignettes/rnassqs.html  
-  - Soil properties:  
-    - **POLARIS**: https://github.com/lhmrosso/XPolaris  
-    - **Soilsgrid**: https://rpubs.com/ials2un/soilgrids_webdav  
-    - **SSURGO**: https://search.r-project.org/CRAN/refmans/FedData/html/get_ssurgo.html    
-  - **Soil water**: https://leombastos.github.io/bastoslab/teaching/2023-aghack-vwc/2023-aghack-vwc.html     
-  - **Drought monitor**: https://droughtmonitor.unl.edu/DmData/DataDownload/WebServiceInfo.aspx    
-  - **Remote sensing**: https://github.com/bevingtona/planetR  
-  - **Elevation**: https://github.com/jhollist/elevatr  
+weatherpre
+```
+
+```{r double sine GDD code development}
+thresh_low = 10
+thresh_up = 100
+
+weather <- weatherpre %>%
+  mutate(tmin_next = lead(tmin_deg_c, n = 1)) %>%
+  mutate(gdd_dbl_sine = dd_dbl_sine(daily_min = tmin_deg_c, 
+                                daily_max = tmax_deg_c, 
+                                nextday_min = tmin_next,
+                                thresh_low = thresh_low, 
+                                thresh_up = thresh_up))
+
+weather
+```
+
   
 
 
