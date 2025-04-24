@@ -102,17 +102,10 @@ daymet_all_unnest
 
 ```
 
-How many rows? Why?  
-
-# Exporting  
-We don't want to have to make an API call every time we'll work with this weather data.  
-
-Therefore, a best practice here is to pull weather data once and export it to file so we can reuse it any time without having to download again.  
-
-Let's do that below:  
-```{r}
+ 
+```{r save partially cleaned weather data}
 write_csv(daymet_all_unnest,
-          "../data/weath"
+          "../data/weather_partial.csv"
           )
 ```
 
