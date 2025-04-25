@@ -1,0 +1,172 @@
+---
+title: "01_data_wrangling"
+format: html
+editor: visual
+---
+
+# Load libraries
+
+```{r}
+library(tidyverse)
+library(janitor)
+```
+
+# Lets load training data
+
+```{r train_trait}
+
+test_trait <- read_csv("../data/raw/testing_submission.csv") %>% clean_names()
+
+test_trait
+```
+
+```{r}
+test_raw <- test_trait %>%
+  select(site, hybrid, yield_mg_ha) %>%
+  slice(1:10)
+
+test_raw
+```
+
+So, we have NAs for the date harvested so for now we will keep this.
+
+```{r}
+summary(train_trait)
+```
+
+```{r train_meta}
+test_meta  <- read_csv("../data/raw/testing_meta.csv")%>% clean_names()
+
+test_meta
+```
+
+```{r}
+summary(test_meta)
+```
+
+```{r}
+unique(test_meta$site)
+```
+
+```{r train_soil}
+test_soil  <- read_csv("../data/raw/testing_soil.csv") %>% clean_names()
+
+test_soil
+```
+
+```{r}
+summary(test_soil)
+```
+
+## Data wrangling
+
+
+```{r train meta wrangling}
+
+meta <- test_meta %>%
+  summarise(
+    min_lat = min(latitude, na.rm = TRUE),
+    max_lat = max(latitude, na.rm = TRUE),
+    min_lon = min(longitude, na.rm = TRUE),
+    max_lon = max(longitude, na.rm = TRUE),
+    n_missing_lat = sum(is.na(latitude)),
+    n_missing_lon = sum(is.na(longitude))
+  )
+
+meta
+
+```
+
+
+```{r}
+library(sf)
+library(mapview)
+
+# Convert to spatial object without filtering
+test_meta_sf <- test_meta %>%
+  mutate(across(c(longitude, latitude), as.numeric)) %>%
+  filter(!is.na(longitude), !is.na(latitude)) %>%  # just remove NAs for mapview to work
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+# View all points (good and bad)
+mapview(test_meta_sf, zcol = "site")
+
+```
+
+```{r}
+#install.packages("ggrepel")
+library(ggrepel)
+# Convert to sf and add lat/lon columns for text labels
+test_meta_sf <- test_meta %>%
+  mutate(across(c(longitude, latitude), as.numeric)) %>%
+  filter(!is.na(longitude), !is.na(latitude)) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+  mutate(
+    lon = st_coordinates(.)[, 1],
+    lat = st_coordinates(.)[, 2]
+  )
+
+# Static map with labels
+ggplot(test_meta_sf) +
+  geom_sf(color = "blue", size = 2, alpha = 0.7) +
+  geom_text_repel(aes(x = lon, y = lat, label = site), size = 3, color = "black", max.overlaps = 50) +
+  labs(
+    title = "Corn Variety Trial Site Locations (2024)",
+    caption = "Source: testing_meta.csv"
+  ) +
+  theme_minimal() +
+  coord_sf(xlim = c(-130, -60), ylim = c(25, 50), expand = FALSE)
+```
+
+# Pulling Weather Data for Test
+
+```{r weather/GDD packages}
+# To Install Degday package
+#options(repos = c(ajlyons = 'https://ajlyons.r-universe.dev',
+#                 CRAN = 'https://cloud.r-project.org'))
+#install.packages('degday')
+
+
+library(tidyverse)
+library(USAboundaries) # for US state boundaries
+library(sf) # for US map
+library(daymetr)
+library(degday)
+
+
+
+test_meta
+```
+
+# Download Data with Daymet
+
+```{r weather data testing}
+test_daymet <- test_meta %>%
+  mutate(weather = pmap(list(.y = year,
+                        .site = site,
+                        .lat = latitude,
+                        .lon = longitude),
+                    function(.y, .site, .lat, .lon)
+                      download_daymet(
+                        site = .site,
+                        lat = .lat,
+                        lon = .lon,
+                        start = .y,
+                        end = .y,
+                        simplify = T,
+                        silent = T
+                      ) %>%
+                    rename(.year = year,
+                           .site = site, 
+                           .lat = latitude,
+                           .lon = longitude
+                           )
+                    ))
+
+head(test_daymet)
+test_daymet
+```
+
+
+
+
