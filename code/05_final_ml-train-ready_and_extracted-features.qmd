@@ -330,3 +330,22 @@ Growth stages depend on cumulative GDD starting from planting day.
 If we dont knowplanting started for testing hybrids we cnot correctly define what day the crop is at VE, V6, VT, etc.
 
 If we fake itit will introduce error and hurt model performance.
+
+```{r}
+# 1. Read your training file and the new monthly GDD-Precip file
+write.csv(train_ready_soil_w, "../data/processed/train_ready_soil.csv")
+train_ready_soil_w  <- read.csv("../data/processed/train_ready_soil.csv")   
+monthly_summary_wide <- read_csv("../data/processed/GDD_monthly_summary_wide.csv")  
+
+# 2. Check column names
+colnames(train_ready_soil_w)
+colnames(monthly_summary_wide)
+
+# 3. Join them together by site, year, and hybrid
+train_final <- train_ready_soil_w %>%
+  left_join(monthly_summary_wide, by = c("site", "year", "hybrid"))
+
+# 4. Quick summary to make sure everything looks good
+summary(train_final)
+```
+
