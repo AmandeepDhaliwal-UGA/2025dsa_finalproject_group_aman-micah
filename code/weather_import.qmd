@@ -136,8 +136,8 @@ weather <- weatherpre %>%
   mutate(gdd_dbl_sine = dd_dbl_sine(daily_min = tmin_deg_c, 
                                 daily_max = tmax_deg_c, 
                                 nextday_min = tmin_next,
-                                thresh_low = thresh_low, 
-                                thresh_up = thresh_up))
+                                thresh_low = 10, 
+                                thresh_up = 100))
 
 weather
 ```

@@ -25,6 +25,8 @@ library(mapview)
 # import data
 ```{r}
 train_grouped <- read_csv("../data/processed/training-data-cleaned.csv")
+
+train_grouped
 ```
 
 # merge weather with planting/harvesting dates
@@ -45,6 +47,8 @@ train_dates <- train_grouped %>%
 
 ```{r}
 weather_f <- read_csv("../data/weather_partial.csv")
+
+weather_f
 ```
 # Join site-year info to weather 
 
@@ -56,6 +60,8 @@ weather_gs <- weather_f %>%
     yday >= plant_doy,
     yday <= harvest_doy
   )
+
+weather_gs
 
 ```
 ```{r check summary}
@@ -69,7 +75,7 @@ unique(weather_gs$site)
 We are using degday package. 
 
 ```{r}
-install.packages("degday")
+#install.packages("degday")
 library(degday)
 ```
 
@@ -80,10 +86,14 @@ weather_gdd <- weather_gs %>%
   group_by(site, year, hybrid) %>%
   mutate(tmin_next = lead(tmin_deg_c, 1)) %>%
   ungroup()
+
+weather_gdd
 ```
 
 
 ```{r Calculate gdd_dbl_sine with {degday}}
+
+
 unique_sites <- unique(weather_gdd$site)
 
 gdd_list <- lapply(unique_sites, function(s) {
@@ -96,7 +106,17 @@ gdd_list <- lapply(unique_sites, function(s) {
       gdd_dbl_sine = dd_dbl_sine(tmin_deg_c, tmax_deg_c, tmin_next, 10, 100)
     )
 })
+
+gdd_list
+
+```
+
+
+
+```{r bind rows}
 weather_gdd_final <- bind_rows(gdd_list)
+
+weather_gdd_final
 
 ```
 
@@ -151,6 +171,52 @@ weather_gdd_final_dedup %>%
   filter(n > 1)  # This should now return 0
 
 ```
+
+```{r create month object}
+month_train <- fieldweather %>%
+  # Selecting needed variables
+  dplyr::select(year, site, latitude, longitude,
+                yield_adj_mg_ha,
+                yday,
+                dayl.s = dayl_s, 
+                prcp.mm = prcp_mm_day,
+                srad.wm2 = srad_w_m_2, 
+                tmax.c = tmax_deg_c, 
+                tmin.c = tmin_deg_c,
+                vp.pa = vp_pa
+                ) %>%
+  # Creating a date class variable  
+  mutate(date_chr = paste0(year, "/", yday)) %>%
+  mutate(date = as.Date(date_chr, "%Y/%j")) %>%
+  # Extracting month from date  
+  mutate(month = month(date)) %>%
+  mutate(month_abb = month(date, label = TRUE))
+
+month_train
+```
+
+```{r summarize by month}
+month_train_sum <- month_train %>%
+  group_by(year, site, month_abb, strength_gtex) %>%
+  summarise(across(.cols = c(dayl.s,
+                             srad.wm2,
+                             tmax.c,
+                             tmin.c,
+                             vp.pa,
+                             gdd_dbl_sine),
+                   .fns = mean,
+                   .names = "mean_{.col}"
+                   ),
+            across(.cols = prcp.mm,
+                   .fns = sum,
+                   .names = "sum_{.col}")
+            ) %>% 
+  ungroup()
+
+
+month_train_sum
+```
+
 
 ```{r gdd summary (97,800 observations)}
 gdd_summary <- weather_gdd_final_dedup %>%
