@@ -60,7 +60,6 @@ summary(test_soil)
 
 ## Data wrangling
 
-
 ```{r train meta wrangling}
 
 meta <- test_meta %>%
@@ -76,7 +75,6 @@ meta <- test_meta %>%
 meta
 
 ```
-
 
 ```{r}
 library(sf)
@@ -166,7 +164,3 @@ test_daymet <- test_meta %>%
 head(test_daymet)
 test_daymet
 ```
-
-
-
-
