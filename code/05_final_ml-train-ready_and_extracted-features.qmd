@@ -1,0 +1,332 @@
+---
+title: "05_final_ml-train-ready_data-cleaning"
+format: html
+editor: visual
+---
+
+# Load libraries
+
+```{r}
+install.packages("tidyverse")
+install.packages("janitor")
+install.packages("sf")
+install.packages("viridis")
+install.packages("gstat")
+install.packages("raster")
+install.packages("cubelyr")
+install.packages("mapview")
+library(tidyverse)
+library(janitor)
+library(dplyr)
+library(tidyr)
+library(sf)
+library(ggplot2)
+library(viridis)
+library(gstat)
+library(raster)
+library(stars)
+library(cubelyr)
+library(mapview)
+```
+
+# import ml train ready file
+
+```{r}
+library(readr)
+train_ready <- read_csv("../data/processed/training-data-ml-ready.csv")
+
+```
+
+```{r}
+unique(train_ready$site)
+```
+
+```{r}
+train_metadata <- read_csv("../data/raw/training_meta.csv")
+unique(train_metadata$site)
+```
+
+```{r}
+train_soils <- read_csv("../data/raw/training_soil.csv")
+summary(train_soils)
+```
+
+For soils, we only have data from 2015-2023. We dont have data for 2014 year.
+
+```{r clean train soils}
+
+train_soils_clean <- train_soils %>%
+  separate(site, into = c("site", "year"), sep = "_") %>% 
+  mutate(year = as.numeric(year))
+
+```
+
+```{r join soils with train ready}
+train_ready_soil <- train_ready %>%
+  left_join(train_soils_clean, by = c("site", "year"))
+
+```
+
+```{r}
+summary(train_ready_soil)
+```
+We donot have data for our 2015 soils. Thats why they are showing NAs values 
+
+```{r find site year with misisng info}
+library(dplyr)
+
+# Check missing by site-year
+train_ready_soil %>%
+  filter(is.na(soilpH) | is.na(om_pct) | is.na(soilk_ppm) | is.na(soilp_ppm)) %>%
+  distinct(site, year) %>%
+  arrange(site, year)
+
+```
+
+We will remove these 96 site years beacuse we dont have soil infromation for this.
+
+```{r}
+train_ready_soil %>%
+  filter(is.na(soilpH) | is.na(om_pct) | is.na(soilk_ppm) | is.na(soilp_ppm)) %>%
+  count(site, year) %>%
+  arrange(desc(n))
+
+```
+
+# conversions for weather data
+
+## Calculate solar radiation in MJ/m²/day
+
+Why? Understanding Plant Energy Input:
+
+> Solar radiation is a key driver of photosynthesis. Converting it into MJ/m²/day provides a standardized measure of the energy available to the crop for growth. Daily Total Radiation:
+
+The raw srad_w_m_2 (shortwave radiation in W/m²) is an instantaneous flux density, meaning it shows energy at a moment in time. By multiplying it by dayl_s (day length in seconds per day), they calculated the total radiation received during the day. The division by 1,000,000 converts this value into megajoules per square meter per day (MJ/m²/day), a standard unit for solar radiation. How It Helps: It allows analysis of how daily energy input influences crop development. Combined with GDD, it helps identify growth patterns based on both temperature and light availability.
+
+> Why mean daily temp (tmed_deg_c)? Simplified Representation of Daily Temperature:
+
+Instead of analyzing maximum and minimum temperatures separately, the mean daily temperature (tmed_deg_c) provides a single representative value for the day's thermal conditions. This is particularly useful when correlating temperature with growth, respiration, or phenological events. GDD Context:
+
+While GDD focuses on effective heat accumulation, mean daily temperature gives a broader perspective on daily conditions, including how extreme or mild a day was. How It Helps: It complements GDD by providing an additional temperature-based metric. tmed_deg_c can be used to identify trends or deviations that GDD alone might not reveal.
+
+
+## Step 1: convert temp to farenheit
+
+
+```{r conversions}
+train_ready_soil_w <- train_ready_soil %>%
+  mutate(
+    mean_tmax_f = (mean_tmax * 1.8) + 32,
+    mean_tmin_f = (mean_tmin * 1.8) + 32,
+    tmed_deg_c = (mean_tmax + mean_tmin) / 2,
+    d_solar_rad_MJ_M2 = (mean_solar_rad * mean_daylength_s) / 1e6
+  )
+summary(train_ready_soil_w)
+```
+# lets inspect one site year
+
+```{r}
+# STEP 1 Pick one site-year
+site_selected <- "GAH1"
+year_selected <- 2019
+
+# STEP 2 Filter
+example_siteyear <- train_ready_soil %>%
+  filter(site == site_selected, year == year_selected)
+
+# STEP 3 View summary
+summary(example_siteyear)
+
+# STEP 4 Glimpse quickly
+glimpse(example_siteyear)
+
+
+```
+
+So. inspecting one year we can say that we have hybrids nested inside each site-year.
+
+Right now we have growing season totals/averages. We are thinking to calculate  GDD on monthly basis. 
+
+# Lets import the data 
+
+```{r}
+weather_gdd_final <- read_csv("../data/processed/weather_gdd_final.csv")
+summary(weather_gdd_final)
+```
+we should drop extra columns (like latitude, longitude, altitude, maybe even tile, site_2) before proceeding!
+
+Because:
+
+They are not needed for monthly GDD or rainfall calculations.
+
+They are making the file huge (17 million rows × extra columns = heavy).
+
+We only need site, year, hybrid, yday, gdd_dbl_sine, prcp_mm_day for now.
+
+# Calculate GDD
+
+## 1.Keep only the essential columns 
+
+```{r}
+# Keep only the essential columns
+weather_cleaned <- weather_gdd_final %>%
+  dplyr::select(
+    site, year, hybrid, yday, gdd_dbl_sine, prcp_mm_day, harvest_doy, plant_doy  
+  )
+
+```
+
+## 2.Create a "month" column
+```{r}
+# STEP 1: Create a "month" column based on yday
+weather_cleaned <- weather_cleaned %>%
+  mutate(month = month(as.Date(yday, origin = paste0(year - 1, "-12-31"))))
+```
+
+## 3.calculate monthly sums
+```{r}
+# STEP 2: Group by site, year, hybrid, and month to calculate monthly sums
+monthly_summary <- weather_cleaned %>%
+  group_by(site, year, hybrid, month) %>%
+  summarise(
+    monthly_gdd = sum(gdd_dbl_sine, na.rm = TRUE),
+    monthly_precip = sum(prcp_mm_day, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+## 4.Pivot wider
+```{r}
+# STEP 3: Pivot wider (HERE WE make columns like GDD_May, GDD_June, etc.)
+monthly_summary_wide <- monthly_summary %>%
+  pivot_wider(
+    names_from = month,
+    values_from = c(monthly_gdd, monthly_precip),
+    names_glue = "{.value}_{month}"
+  )
+
+# Check first few rows
+head(monthly_summary_wide)
+```
+
+## 5. SUMMARY
+```{r}
+summary(monthly_summary_wide)
+```
+
+## 6. EXPORT
+
+```{r}
+write_csv(monthly_summary_wide, "../data/processed/GDD_monthly_summary_wide.csv")
+```
+
+
+# GDD based on growth stages: 
+
+we accumulate GDD from planting date, and split the growing season into stages based on GDD thresholds.
+
+## 1. Thresholds for GDD stages 
+
+```{r Thresholds for GDD stages (based on cumulative GDD from planting)}
+stage_thresholds <- c(
+  VE_V6 = 475,    # Emergence to V6
+  V6_VT = 1135,   # V6 to Tasseling (VT)
+  VT_R1 = 1235,   # Tassel to Silking
+  R1_R3 = 1660,   # Silking to Milk (R3)
+  R3_R6 = 2450    # Milk to Maturity (R6)
+)
+```
+
+## 2. prepare weather file first
+```{r lets prepare weather file first}
+# Updated clean preparation
+# Start again cleanly
+weather_gdd_stage <- weather_cleaned %>%
+  group_by(site, year, hybrid) %>%
+  arrange(site, year, hybrid, yday) %>%
+  mutate(
+    cum_gdd = cumsum(gdd_dbl_sine)
+  ) %>%
+  ungroup()   # if you want month
+
+summary(weather_gdd_stage)
+```
+
+## Reference for Corn Growth Stage and GDU Calendar
+
+We used a reference fro Iowa and nebraska to get a threshold for GDD. For more detailed growth stages and GDU (Growing Degree Units) accumulation, refer to the document:  
+[Corn Growth Stage and GDU Calendar (PDF)](../resources/Corn-growth-stage-day-and-GDU-calendar10.pdf)
+
+
+## 3. function to label each day into a growth stage 
+```{r use function to label each day into a growth stage based on cumulative GDD}
+assign_growth_stage <- function(cum_gdd) {
+  case_when(
+    cum_gdd <= stage_thresholds["VE_V6"] ~ "VE_V6",
+    cum_gdd <= stage_thresholds["V6_VT"] ~ "V6_VT",
+    cum_gdd <= stage_thresholds["VT_R1"] ~ "VT_R1",
+    cum_gdd <= stage_thresholds["R1_R3"] ~ "R1_R3",
+    cum_gdd <= stage_thresholds["R3_R6"] ~ "R3_R6",
+    TRUE ~ "After_R6"
+  )
+}
+```
+
+## 4. apply the function
+```{r time to apply the function}
+weather_gdd_stage <- weather_gdd_stage %>%
+  mutate(growth_stage = assign_growth_stage(cum_gdd))
+```
+
+## 5. Summarize GDD and Precip
+```{r Summarize GDD and Precip by growth stage}
+
+gdd_stage_summary <- weather_gdd_stage %>%
+  group_by(site, year, hybrid, growth_stage) %>%
+  summarise(
+    gdd_sum = sum(gdd_dbl_sine, na.rm = TRUE),
+    precip_sum = sum(prcp_mm_day, na.rm = TRUE),
+    mean_tmax = mean(tmax_deg_c, na.rm = TRUE),
+    mean_tmin = mean(tmin_deg_c, na.rm = TRUE),
+    mean_srad = mean(srad_w_m_2, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+```
+we have 455,076 observations
+
+
+## 6. pivot_wider
+```{r Reshape wider to have one row per site-year-hybrid}
+
+gdd_stage_summary_wide <- gdd_stage_summary %>%
+  pivot_wider(
+    names_from = growth_stage,
+    values_from = c(gdd_sum, precip_sum),
+    names_glue = "{.value}_{growth_stage}"
+  )
+```
+
+## 7. summary
+```{r}
+summary(gdd_stage_summary_wide)
+```
+
+Growth Stage	Description	GDD Range (Approx.)	Your Variables
+VE–V6	Early Vegetative	~100–600	gdd_sum_VE_V6
+V6–VT	Rapid Vegetative Growth	~600–1500	gdd_sum_V6_VT
+VT–R1	Flowering	~100	gdd_sum_VT_R1
+R1–R3	Early Reproductive (Silking–Milk)	~400	gdd_sum_R1_R3
+R3–R6	Grain Filling (Milk–Maturity)	~700	gdd_sum_R3_R6
+After R6	Maturation to Black Layer	~100–150	gdd_sum_After_R6
+
+
+SO WE DID THIS PART BUT DROPPED THE IDEA 
+
+BECAUSE:
+
+Growth stages depend on cumulative GDD starting from planting day.
+
+If we dont knowplanting started for testing hybrids we cnot correctly define what day the crop is at VE, V6, VT, etc.
+
+If we fake itit will introduce error and hurt model performance.
