@@ -331,6 +331,7 @@ If we dont knowplanting started for testing hybrids we cnot correctly define wha
 
 If we fake itit will introduce error and hurt model performance.
 
+# Final merge and export
 ```{r}
 # 1. Read your training file and the new monthly GDD-Precip file
 write.csv(train_ready_soil_w, "../data/processed/train_ready_soil.csv")
