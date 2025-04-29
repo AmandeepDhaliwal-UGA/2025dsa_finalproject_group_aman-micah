@@ -1,0 +1,373 @@
+---
+title: "XGBoost"
+format: html
+editor: visual
+---
+
+# XGBoost Workflow
+
+## Load Libraries
+
+We begin by loading the required libraries:
+
+```{r}
+#| message: false
+#| warning: false
+#install.packages("xgboost") #new package
+#install.packages("doParallel")
+library(tidymodels)   # Core framework for modeling (includes recipes, workflows, parsnip, etc.)
+library(finetune)     # Additional tuning strategies (e.g., racing, ANOVA-based tuning)
+library(vip)          # For plotting variable importance from fitted models
+library(xgboost)      # XGBoost implementation in R
+library(ranger)       # Fast implementation of Random Forests
+library(tidyverse)    # Data wrangling and visualization
+library(doParallel)   # For parallel computing (useful during resampling/tuning)
+#library(caret)       # Other great library for Machine Learning 
+```
+
+# Load the data set
+
+
+```{r weather}
+weatherx <- read_csv("../data/processed/train-final-soils-weather.csv")
+weatherx
+```
+
+
+# ML workflow
+
+## 1. Pre-processing
+
+```{r weather_split}
+set.seed(456789) # Set seed 
+weather_splitx <- initial_split(
+  weatherx, 
+  prop = .7, # 70% of dataset allocated to training 
+  strata = yield_adj_mg_ha  # Stratify by adjusted yield
+  )
+weather_splitx
+```
+
+### a. Data split
+
+For data split, we will use 70% training / 30% testing.
+
+```{r weather_train}
+weather_trainx <- training(weather_splitx)  # 70% of data
+weather_trainx
+```
+
+```{r weather_test}
+weather_testx <- testing(weather_splitx)    # 30% of data
+weather_testx
+```
+
+### b. Distribution of target variable
+
+```{r distribution}
+ggplot() +
+  geom_density(data = weather_trainx, 
+               aes(x = yield_adj_mg_ha),
+               color = "red") +
+  geom_density(data = weather_testx, 
+               aes(x = yield_adj_mg_ha),
+               color = "blue") 
+  
+```
+
+Distribution of training and testing data match perfectly.
+
+### c. Data processing recipe
+
+```{r weather_recipe}
+# Create recipe for data preprocessing
+weather_recipex <- recipe(yield_adj_mg_ha ~ ., data = weather_trainx) %>% # Remove identifier columns and months not in growing season
+  step_rm(
+    year,       # Remove year identifier
+    site,       # Remove site identifier
+    hybrid, # Remove hybrid; non-numeric
+    days_to_harvest, # Remove days from plant to harvest
+    contains("gdd") # Originally intended to use Growing Degree Days by month, but had to scrap;
+                    # could not get daily weather data for 2024 in time for testing submission set
+    
+   # grain_moisture # Remove grain moisture; not predictive
+  )
+weather_recipex
+```
+
+```{r weather_prep}
+# Prep the recipe to estimate any required statistics
+weather_prepx <- weather_recipex %>% 
+  prep()
+
+# Examine preprocessing steps
+weather_prepx
+```
+
+## 2. Training
+
+### a. Model specification
+
+
+```{r xgb_spec}
+xgb_specx <- boost_tree(#Model type is XGBoost, tune hyperparameters
+                      trees = tune(),   # Iterations
+                      tree_depth = tune(),         # Tree depth
+                      min_n = tune(),    # Minimum samples for a split
+                      learn_rate = tune()   # Step size 
+                      ) %>% 
+  set_engine("xgboost") %>%        #specify engine 
+  set_mode("regression")       # Set to mode
+  
+
+             
+        
+
+  
+
+xgb_specx
+
+```
+
+### b. Cross-validation setup
+
+We use 10-fold cross-validation to evaluate model performance during tuning:
+
+```{r}
+set.seed(456789) #456789
+resampling_foldcvx <- vfold_cv(weather_trainx, # Create 5-fold cross-validation resampling object from training data
+                              v = 10)
+
+resampling_foldcvx
+resampling_foldcvx$splits[[1]]
+```
+
+### c. Hyperparameter grid with Latin Hypercube Sampling
+
+
+```{r }
+xgb_gridx <- grid_latin_hypercube(
+  tree_depth(),
+  min_n(),
+  learn_rate(),
+  trees(),
+  size = 100
+)
+
+xgb_gridx
+```
+
+```{r}
+ggplot(data = xgb_gridx,
+       aes(x = tree_depth, 
+           y = min_n)) +
+  geom_point(aes(color = factor(learn_rate),
+                 size = trees),
+             alpha = .5,
+             show.legend = FALSE)
+```
+
+## 3. Model Tuning
+
+```{r xgb_grid_result}
+set.seed(456789)
+#parallel processing
+registerDoParallel(cores = parallel::detectCores()-1)
+
+xgb_resx <- tune_race_anova(object = xgb_specx,
+                      preprocessor = weather_recipex,
+                      resamples = resampling_foldcvx,
+                      grid = xgb_gridx,
+                      control = control_race(save_pred = TRUE))
+
+stopImplicitCluster()
+
+
+beepr::beep()
+xgb_resx$.metrics[[2]]
+```
+
+## 4. Select Best Models
+
+
+```{r}
+# Based on lowest RMSE
+best_rmsex <- xgb_resx %>% 
+  select_best(metric = "rmse")%>% 
+  mutate(source = "best_rmsex")
+
+best_rmsex
+
+```
+
+```{r}
+# Based on lowers RMSE within 1% loss
+best_rmse_pct_lossx <- xgb_resx %>% 
+  select_by_pct_loss("min_n",
+                     metric = "rmse",
+                     limit = 1
+                     )%>% 
+  mutate(source = "best_rmse_pct_lossx")
+
+best_rmse_pct_lossx
+```
+
+```{r}
+# Based on lowest RMSE within 1 se
+best_rmse_one_std_errx <- xgb_resx %>% 
+  select_by_one_std_err(metric = "rmse",
+                        eval_time = 100,
+                        trees
+                        )%>% 
+  mutate(source = "best_rmse_one_std_errx")
+
+best_rmse_one_std_errx
+```
+
+Here we use all three methods which we learn in this class for R2.
+
+```{r}
+# Based on greatest R2
+best_r2x <- xgb_resx %>% 
+  select_best(metric = "rsq")%>% 
+  mutate(source = "best_r2x")
+
+best_r2x
+```
+
+```{r}
+# Based on lowers R2 within 1% loss
+best_r2_pct_lossx <- xgb_resx %>% 
+  select_by_pct_loss("min_n",
+                     metric = "rsq",
+                     limit = 1
+                     ) %>% 
+  mutate(source = "best_r2_pct_lossx")
+
+best_r2_pct_lossx
+```
+
+```{r}
+# Based on lowest R2 within 1 se
+best_r2_one_std_errorx <- xgb_resx %>% 
+  select_by_one_std_err(metric = "rsq",
+                        eval_time = 100,
+                        trees
+                        ) %>%
+  mutate(source = "best_r2_one_std_errorx")
+
+best_r2_one_std_errorx
+```
+
+## Compare and Finalize Model
+
+```{r comparing values}
+best_rmsex %>% 
+  bind_rows(best_rmse_pct_lossx, 
+            best_rmse_one_std_errx, 
+            best_r2x, 
+            best_r2_pct_lossx, 
+            best_r2_one_std_errorx)
+```
+
+## 5. Final Specification
+
+```{r final_spec_fit}
+#Using Best R2 in the code but all metrics except Best R2 within 1 std error agree on these hyperparameters
+
+final_specx <- boost_tree(
+  trees = best_r2x$trees,           # Number of boosting rounds (trees)
+  tree_depth = best_r2x$tree_depth, # Maximum depth of each tree
+  min_n = best_r2x$min_n,           # Minimum number of samples to split a node
+  learn_rate = best_r2x$learn_rate  # Learning rate (step size shrinkage)
+) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+
+final_specx
+```
+
+## 6. Final Fit and Predictions
+
+## Validation
+
+```{r final_fit}
+set.seed(456789)
+final_fitx <- last_fit(final_specx,
+                weather_recipex,
+                split = weather_splitx)
+
+final_fitx %>%
+  collect_predictions()
+```
+
+## 7. Evaluate on Test Set
+
+```{r final_fit_metrics}
+final_fitx %>%
+  collect_metrics()
+```
+
+- R2 = 0.5443737
+- RMSE = 1.8902744
+
+
+## 8. Evaluate on Training Set
+
+```{r}
+final_specx %>%
+  fit(yield_adj_mg_ha ~ .,
+      data = bake(weather_prepx, 
+                  weather_trainx)) %>%
+  augment(new_data = bake(weather_prepx, 
+                          weather_trainx)) %>% 
+  rmse(yield_adj_mg_ha, .pred) %>%
+  bind_rows(
+    
+    
+# R2
+final_specx %>%
+  fit(yield_adj_mg_ha ~ .,
+      data = bake(weather_prepx, 
+                  weather_trainx)) %>%
+  augment(new_data = bake(weather_prepx, 
+                          weather_trainx)) %>% 
+  rsq(yield_adj_mg_ha, .pred))
+```
+
+## 9. Predicted vs Observed Plot
+
+```{r}
+final_fitx %>%
+  collect_predictions() %>%
+  ggplot(aes(x = yield_adj_mg_ha,
+             y = .pred)) +
+  geom_point() +
+  geom_abline() +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(limits = c(20, 40)) +
+  scale_y_continuous(limits = c(20, 40)) 
+```
+
+## 10. Variable Importance
+
+```{r final_spec}
+final_specx %>%
+  fit(yield_adj_mg_ha ~ .,
+         data = bake(weather_prepx, weather_trainx)) %>% #There little change in variable improtance if you use full dataset
+    vi() %>%
+  mutate(
+    Variable = fct_reorder(Variable, 
+                           Importance)
+  ) %>%
+  ggplot(aes(x = Importance, 
+             y = Variable)) +
+  geom_col() +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(y = NULL)
+```
+
+```{r print }
+final_specx
+```
+
