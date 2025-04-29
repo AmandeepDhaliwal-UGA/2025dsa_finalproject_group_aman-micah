@@ -352,3 +352,7 @@ train_final <- train_ready_soil_w %>%
 # 4. Quick summary to make sure everything looks good
 summary(train_final)
 ```
+```{r}
+train_final <- write_csv(train_final, "../data/processed/train-final-soils-weather.csv") 
+```
+
