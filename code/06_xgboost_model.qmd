@@ -13,8 +13,12 @@ We begin by loading the required libraries:
 ```{r}
 #| message: false
 #| warning: false
-#install.packages("xgboost") #new package
+install.packages("xgboost") #new package
 #install.packages("doParallel")
+#install.packages("tidymodels", type = "binary")
+#install.packages("finetune", type = "binary")
+install.packages("beepr")
+install.packages("doParallel")
 library(tidymodels)   # Core framework for modeling (includes recipes, workflows, parsnip, etc.)
 library(finetune)     # Additional tuning strategies (e.g., racing, ANOVA-based tuning)
 library(vip)          # For plotting variable importance from fitted models
@@ -27,12 +31,10 @@ library(doParallel)   # For parallel computing (useful during resampling/tuning)
 
 # Load the data set
 
-
 ```{r weather}
 weatherx <- read_csv("../data/processed/train-final-soils-weather.csv")
 weatherx
 ```
-
 
 # ML workflow
 
@@ -108,7 +110,6 @@ weather_prepx
 
 ### a. Model specification
 
-
 ```{r xgb_spec}
 xgb_specx <- boost_tree(#Model type is XGBoost, tune hyperparameters
                       trees = tune(),   # Iterations
@@ -143,7 +144,6 @@ resampling_foldcvx$splits[[1]]
 ```
 
 ### c. Hyperparameter grid with Latin Hypercube Sampling
-
 
 ```{r }
 xgb_gridx <- grid_latin_hypercube(
@@ -188,7 +188,6 @@ xgb_resx$.metrics[[2]]
 ```
 
 ## 4. Select Best Models
-
 
 ```{r}
 # Based on lowest RMSE
@@ -308,9 +307,8 @@ final_fitx %>%
   collect_metrics()
 ```
 
-- R2 = 0.5443737
-- RMSE = 1.8902744
-
+-   R2 = 0.5443737
+-   RMSE = 1.8902744
 
 ## 8. Evaluate on Training Set
 
@@ -370,4 +368,3 @@ final_specx %>%
 ```{r print }
 final_specx
 ```
-
