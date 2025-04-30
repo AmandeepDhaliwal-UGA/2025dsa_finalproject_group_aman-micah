@@ -1,0 +1,35 @@
+---
+title: "08_run_predictions_develop"
+format: html
+---
+
+## Code for applying model to data set; copy and paste to correct ML script
+
+```{r XGBoost Predict}
+
+# Load the test data sheet to run predictions on
+prediction_data <- read_csv("../data/processed/weather_2024_only")
+
+# Create a workflow bundling the model specification and recipe
+workflow_fit <- workflow() %>%
+  add_model(final_specx) %>%
+  add_recipe(weather_recipex)
+
+# Fit the workflow to your training data
+fitted_workflow <- fit(workflow_fit, data = weatherx)
+
+# Make predictions using the *fitted* workflow
+predictions <- predict(fitted_workflow, prediction_data)
+
+# Add the predictions as a new column to the new data
+prediction_data %>% 
+  mutate(yield = predictions) %>%
+  unnest() %>%
+  mutate(yield = .pred) %>%
+  dplyr::select(-.pred) %>%
+  dplyr::select(yield, everything()) %>%
+  dplyr::select(hybrid, everything()) %>%
+  dplyr::select(site, everything()) %>%
+  dplyr::select(year, everything()) %>%
+  
+```
