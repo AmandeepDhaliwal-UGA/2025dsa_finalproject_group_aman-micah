@@ -32,7 +32,8 @@ library(doParallel)   # For parallel computing (useful during resampling/tuning)
 # Load the data set
 
 ```{r weather}
-weatherx <- read_csv("../data/processed/train-final-soils-weather.csv")
+weatherx <- read_csv("../data/processed/training-data-ml-ready.csv")
+
 weatherx
 ```
 
@@ -89,10 +90,10 @@ weather_recipex <- recipe(yield_adj_mg_ha ~ ., data = weather_trainx) %>% # Remo
     site,       # Remove site identifier
     hybrid, # Remove hybrid; non-numeric
     days_to_harvest, # Remove days from plant to harvest
-    contains("gdd") # Originally intended to use Growing Degree Days by month, but had to scrap;
+    contains("gdd"), # Originally intended to use Growing Degree Days by month, but had to scrap;
                     # could not get daily weather data for 2024 in time for testing submission set
     
-   # grain_moisture # Remove grain moisture; not predictive
+    grain_moisture # Remove grain moisture; not predictive
   )
 weather_recipex
 ```
@@ -286,6 +287,23 @@ final_specx <- boost_tree(
 final_specx
 ```
 
+```{r xgb_spec saved hyperparameters}
+
+# All metrics gave same hyperparameters; saved here in case of system reset
+
+#xgb_specx <- boost_tree(#Model type is XGBoost
+#                      trees = 1633,   # Iterations
+#                      tree_depth = 14,         # Tree depth
+#                      min_n = 30,    # Minimum samples for a split
+#                      learn_rate = 0.004559838   # Step size 
+#                      ) %>% 
+#  set_engine("xgboost") %>%        #specify engine 
+#  set_mode("regression")       # Set to mode
+  
+#xgb_specx
+
+```
+
 ## 6. Final Fit and Predictions
 
 ## Validation
@@ -307,8 +325,8 @@ final_fitx %>%
   collect_metrics()
 ```
 
--   R2 = 0.5443737
--   RMSE = 1.8902744
+-   R2 = 0.557869
+-   RMSE = 1.881843
 
 ## 8. Evaluate on Training Set
 
@@ -343,8 +361,8 @@ final_fitx %>%
   geom_point() +
   geom_abline() +
   geom_smooth(method = "lm") +
-  scale_x_continuous(limits = c(20, 40)) +
-  scale_y_continuous(limits = c(20, 40)) 
+  scale_x_continuous() +
+  scale_y_continuous() 
 ```
 
 ## 10. Variable Importance
@@ -363,6 +381,12 @@ final_specx %>%
   geom_col() +
   scale_x_continuous(expand = c(0, 0)) +
   labs(y = NULL)
+
+ggsave(filename = file.path(output_dir, "var_importance_xgboost.png"), 
+       width = 8, 
+       height = 6, 
+       dpi = 300)
+
 ```
 
 ```{r print }
