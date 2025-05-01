@@ -7,6 +7,7 @@ editor: visual
 ## 
 
 # Load libraries
+
 ```{r}
 library(tidyverse)
 library(janitor)
@@ -23,6 +24,7 @@ library(mapview)
 ```
 
 # import data
+
 ```{r}
 train_grouped <- read_csv("../data/processed/training-data-cleaned.csv")
 
@@ -30,6 +32,7 @@ train_grouped
 ```
 
 # merge weather with planting/harvesting dates
+
 ```{r}
 library(tidyverse)
 library(lubridate)
@@ -39,7 +42,8 @@ train_dates <- train_grouped %>%
   dplyr::select(hybrid, site, year, yield_adj_mg_ha)
 
 ```
-# Import weather data 
+
+# Import weather data
 
 ```{r}
 weather_f <- read_csv("../data/weather_partial.csv") %>% 
@@ -53,13 +57,13 @@ weather_f
 summary(weather_f)
 unique(weather_f$year)
 ```
-# Join site-year info to weather 
+
+# Join site-year info to weather
 
 ```{r}
 # Join site-year info to weather
 weather_gs <- weather_f %>%
-  left_join(train_dates, by = c("site", "year")) %>%
-  filter(month != c(01, 02)) %>%
+  left_join(train_dates, by = c("site", "year"))%>%
   na.omit(yield_adj_mg_ha) 
 
   
@@ -67,6 +71,7 @@ weather_gs <- weather_f %>%
 weather_gs
 
 ```
+
 ```{r check summary}
 summary(weather_gs)
 unique(weather_gs$site)
@@ -75,9 +80,9 @@ unique(weather_gs$site)
 
 # Lets calculate GDD
 
-We are using degday package. 
+We are using degday package.
 
-EDIT: The original plan was to use GDD as a predictor, and this was the code we developed to calculate and summarize by month, using the double sien method. However, due to the technical difficulties with pulling weather for 2024, we had to use the data that Umar shared, which was already summarized by month and thus we were unable to use that to compute GDDs. 
+EDIT: The original plan was to use GDD as a predictor, and this was the code we developed to calculate and summarize by month, using the double sien method. However, due to the technical difficulties with pulling weather for 2024, we had to use the data that Umar shared, which was already summarized by month and thus we were unable to use that to compute GDDs.
 
 The code below was left as comments for documentation purposes.
 
@@ -85,7 +90,6 @@ The code below was left as comments for documentation purposes.
 #install.packages("degday")
 #library(degday)
 ```
-
 
 ```{r Add next day's tmin (required for the double sine model)}
 #weather_gdd <- weather_gs %>%
@@ -96,7 +100,6 @@ The code below was left as comments for documentation purposes.
 
 #weather_gdd
 ```
-
 
 ```{r Calculate gdd_dbl_sine with {degday}}
 
@@ -118,8 +121,6 @@ The code below was left as comments for documentation purposes.
 
 ```
 
-
-
 ```{r bind rows}
 #weather_gdd_final <- bind_rows(gdd_list)
 
@@ -130,8 +131,8 @@ The code below was left as comments for documentation purposes.
 ```{r}
 # summary(weather_gdd_final)
 ```
-# Revisiting the weather GDD
 
+# Revisiting the weather GDD
 
 ```{r check number of rows}
 # weather_gdd_final %>%
@@ -139,6 +140,7 @@ The code below was left as comments for documentation purposes.
 #  nrow()
 
 ```
+
 ```{r}
  weather_gs %>%
   count(site, year, hybrid) %>%
@@ -161,10 +163,11 @@ weather_gs %>%
 
 
 ```
-Yes, there are duplicates. Now, lets clean that up. We will slice the first row. 
+
+Yes, there are duplicates. Now, lets clean that up. We will slice the first row.
 
 ```{r}
-weather_gdd_final_dedup <- weather_gdd_final %>%
+weather_gs_dedup <- weather_gs %>%
   arrange(site, year, hybrid, yday) %>%
   group_by(site, year, hybrid, yday) %>%
   slice(1) %>%
@@ -173,24 +176,24 @@ weather_gdd_final_dedup <- weather_gdd_final %>%
 ```
 
 ```{r cleaned up the duplicates}
-weather_gdd_final_dedup %>%
+weather_gs_dedup %>%
   count(site, year, hybrid, yday) %>%
   filter(n > 1)  # This should now return 0
 
 ```
 
 ```{r create month object}
-month_train <- fieldweather %>%
+month_train <- weather_gs_dedup %>%
   # Selecting needed variables
-  dplyr::select(year, site, latitude, longitude,
+  dplyr::select(year, site, hybrid, lat, lon,
                 yield_adj_mg_ha,
                 yday,
-                dayl.s = dayl_s, 
-                prcp.mm = prcp_mm_day,
-                srad.wm2 = srad_w_m_2, 
-                tmax.c = tmax_deg_c, 
-                tmin.c = tmin_deg_c,
-                vp.pa = vp_pa
+                dayl_s, 
+                prcp_mm_day,
+                srad_w_m_2, 
+                tmax_deg_c, 
+                tmin_deg_c,
+                vp_pa
                 ) %>%
   # Creating a date class variable  
   mutate(date_chr = paste0(year, "/", yday)) %>%
@@ -204,17 +207,18 @@ month_train
 
 ```{r summarize by month}
 month_train_sum <- month_train %>%
-  group_by(year, site, month_abb, strength_gtex) %>%
-  summarise(across(.cols = c(dayl.s,
-                             srad.wm2,
-                             tmax.c,
-                             tmin.c,
-                             vp.pa,
-                             gdd_dbl_sine),
+  dplyr::select(-date, -month) %>%
+  group_by(year, site, month_abb) %>%
+  summarise(across(.cols = c(dayl_s,
+                             srad_w_m_2,
+                             tmax_deg_c,
+                             tmin_deg_c,
+                             vp_pa,
+                             ),
                    .fns = mean,
                    .names = "mean_{.col}"
                    ),
-            across(.cols = prcp.mm,
+            across(.cols = prcp_mm_day,
                    .fns = sum,
                    .names = "sum_{.col}")
             ) %>% 
@@ -224,83 +228,135 @@ month_train_sum <- month_train %>%
 month_train_sum
 ```
 
-
 ```{r gdd summary (97,800 observations)}
-gdd_summary <- weather_gdd_final_dedup %>%
-  group_by(site, year, hybrid) %>%
-  summarise(
-    gdd_total_dbl_sine = sum(gdd_dbl_sine, na.rm = TRUE),
-    .groups = "drop"
-  )
+#gdd_summary <- weather_gdd_final_dedup %>%
+#  group_by(site, year, hybrid) %>%
+#  summarise(
+#    gdd_total_dbl_sine = sum(gdd_dbl_sine, na.rm = TRUE),
+#    .groups = "drop"
+#  )
 
 ```
+
+
+```{r make weather data wide}
+
+month_train_sum_wide <- month_train_sum %>%
+  pivot_longer(cols = mean_dayl_s:sum_prcp_mm_day) %>%
+  mutate(varname = paste0(name, "_", month_abb)) %>%
+  dplyr::select(-name, -month_abb) %>%
+  pivot_wider(names_from = varname,
+              values_from = value)
+  
+month_train_sum_wide
+
+```
+
+# Summarize weather by month, fit to yield
+
 
 ```{r after adding days to harvest: no. of observations: 117872}
 train_ready <- train_grouped %>%
   dplyr::select(site, year, hybrid, yield_adj_mg_ha, grain_moisture, days_to_harvest) %>%
-  left_join(gdd_summary, by = c("site", "year", "hybrid"))
+  left_join(month_train_sum_wide, by = c("site", "year")) %>%
+  na.omit(yield_adj_mg_ha)
 
 ```
 
 ```{r lets summrize the weather data}
-weather_summary <- weather_gdd_final_dedup %>%
-  group_by(site, year, hybrid) %>%
-  summarise(
-    gdd_total_dbl_sine = sum(gdd_dbl_sine, na.rm = TRUE),
-    total_precip_mm = sum(prcp_mm_day, na.rm = TRUE),
-    mean_solar_rad = mean(srad_w_m_2, na.rm = TRUE),
-    mean_tmax = mean(tmax_deg_c, na.rm = TRUE),
-    mean_tmin = mean(tmin_deg_c, na.rm = TRUE),
-    mean_vapor_pressure = mean(vp_pa, na.rm = TRUE),
-    max_snow_eq = max(swe_kg_m_2, na.rm = TRUE),
-    mean_daylength_s = mean(dayl_s, na.rm = TRUE),
-    .groups = "drop"
-  )
+#weather_summary <- weather_gs_dedup %>%
+ # group_by(site, year, hybrid) %>%
+  #summarise(
+   # total_precip_mm = sum(prcp_mm_day, na.rm = TRUE),
+  #  mean_solar_rad = mean(srad_w_m_2, na.rm = TRUE),
+   # mean_tmax = mean(tmax_deg_c, na.rm = TRUE),
+  #  mean_tmin = mean(tmin_deg_c, na.rm = TRUE),
+  #  mean_vapor_pressure = mean(vp_pa, na.rm = TRUE),
+  #  mean_daylength_s = mean(dayl_s, na.rm = TRUE),
+   # .groups = "drop"
+  #)
 
 ```
 
 ```{r}
-train_ready <- train_ready %>%
-  left_join(weather_summary, by = c("site", "year", "hybrid"))
+#train_ready <- train_ready %>%
+#  left_join(weather_summary, by = c("site", "year", "hybrid"))
 
 ```
+
 ```{r}
 glimpse(train_ready)
 summary(train_ready)
 
 ```
+
 ```{r}
-missing_weather <- train_ready %>%
-  filter(is.na(gdd_total_dbl_sine.x)) %>%
-  dplyr::select(site, year, hybrid)
+#missing_weather <- train_ready %>%
+#  filter(is.na(gdd_total_dbl_sine.x)) %>%
+#  dplyr::select(site, year, hybrid)
 
 # See how many unique rows
-nrow(missing_weather)
+#nrow(missing_weather)
 
 # View sample
-head(missing_weather, 10)
+#head(missing_weather, 10)
 
 ```
 
 ```{r}
-weather_summary %>%
-  filter(hybrid == "2369/DK3IIH6")
+#weather_summary %>%
+#  filter(hybrid == "2369/DK3IIH6")
 
 ```
 
 ```{r}
-train_dates %>%
-  filter(hybrid == "2369/DK3IIH6")
+#train_dates %>%
+#  filter(hybrid == "2369/DK3IIH6")
 
 ```
 
 ```{r}
-weather_gdd_final_dedup %>%
-  filter(hybrid == "2369/DK3IIH6") %>%
-  distinct(site, year, hybrid)
+#weather_gdd_final_dedup %>%
+#  filter(hybrid == "2369/DK3IIH6") %>%
+#  distinct(site, year, hybrid)
 
 ```
+
+# Add soil data
+
+```{r import soil}
+soilraw <- read.csv("../data/raw/training_soil.csv")
+
+soilraw
+```
+
+```{r clean site names}
+library(stringr)
+
+soilraw$site <- sub("_[0-9]{4}$", "", soilraw$site)
+
+  
+soilraw
+```
+
+
+```{r join soil data}
+train_ml_ready <- train_ready %>%
+#  dplyr::select(site, year, hybrid, yield_adj_mg_ha, grain_moisture, days_to_harvest) %>%
+  left_join(soilraw, by = c("site", "year")) %>%
+  dplyr::select(site, year, hybrid, yield_adj_mg_ha, grain_moisture, soilpH, om_pct, soilk_ppm, soilp_ppm, everything()) %>%
+ na.omit
+  
+train_ml_ready
+
+```
+
+```{r double check free of NAs}
+summary(train_ml_ready)
+```
+
+All good, export for training ML
+
 ```{r}
-write.csv(train_ready, "../data/processed/training-data-ml-ready.csv", row.names = FALSE)
+write.csv(train_ml_ready, "../data/processed/training-data-ml-ready.csv", row.names = FALSE)
 ```
-
