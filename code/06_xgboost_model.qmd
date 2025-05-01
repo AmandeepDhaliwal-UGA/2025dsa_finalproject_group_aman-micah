@@ -291,16 +291,16 @@ final_specx
 
 # All metrics gave same hyperparameters; saved here in case of system reset
 
-#xgb_specx <- boost_tree(#Model type is XGBoost
-#                      trees = 1633,   # Iterations
-#                      tree_depth = 14,         # Tree depth
-#                      min_n = 30,    # Minimum samples for a split
-#                      learn_rate = 0.004559838   # Step size 
-#                      ) %>% 
-#  set_engine("xgboost") %>%        #specify engine 
-#  set_mode("regression")       # Set to mode
+final_specx <- boost_tree(#Model type is XGBoost
+                      trees = 1633,   # Iterations
+                      tree_depth = 14,         # Tree depth
+                      min_n = 30,    # Minimum samples for a split
+                      learn_rate = 0.004559838   # Step size 
+                      ) %>% 
+  set_engine("xgboost") %>%        #specify engine 
+  set_mode("regression")       # Set to mode
   
-#xgb_specx
+final_specx
 
 ```
 
@@ -356,13 +356,24 @@ final_specx %>%
 ```{r}
 final_fitx %>%
   collect_predictions() %>%
-  ggplot(aes(x = yield_adj_mg_ha,
-             y = .pred)) +
-  geom_point() +
-  geom_abline() +
-  geom_smooth(method = "lm") +
-  scale_x_continuous() +
-  scale_y_continuous() 
+  ggplot(aes(x = yield_adj_mg_ha, y = .pred)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "blue") +
+  geom_smooth(method = "lm", color = "red") +
+  annotate("text", x = -Inf, y = Inf, 
+           label = "R² = 0.557869\nRMSE = 1.881843", 
+           hjust = -0.1, vjust = 1.1, size = 4, fontface = "bold") +
+  labs(
+    x = "Actual Yield (mg/ha)",
+    y = "Predicted Yield (mg/ha)",
+    title = "Predicted vs. Actual Yield"
+  ) +
+  theme_minimal()
+
+ggsave(filename = file.path("../output", "xgb_pred_vs_obs.png"), 
+       width = 8, 
+       height = 6, 
+       dpi = 300)
 ```
 
 ## 10. Variable Importance
@@ -382,7 +393,7 @@ final_specx %>%
   scale_x_continuous(expand = c(0, 0)) +
   labs(y = NULL)
 
-ggsave(filename = file.path(output_dir, "var_importance_xgboost.png"), 
+ggsave(filename = file.path("../output", "var_importance_xgboost.png"), 
        width = 8, 
        height = 6, 
        dpi = 300)

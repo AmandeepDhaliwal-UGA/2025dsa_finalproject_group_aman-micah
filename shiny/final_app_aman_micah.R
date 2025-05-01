@@ -48,7 +48,7 @@ ui <- fluidPage(
       }
     "))
   ),
-  tags$div(class = "title", "CRSS 8030 Final Project - [MODEL NAME]"),
+  tags$div(class = "title", "CRSS 8030 Final Project - XGBoost"),
   tags$div(class = "subtitle", "Amandeep Dhaliwal and Micah Jones"),
   navbarPage(
     "", # Empty title for navbarPage to avoid redundancy
@@ -82,15 +82,14 @@ ui <- fluidPage(
                )
              )
     ),
-    tabPanel("[MODEL NAME] - Variable Ranking",
+    tabPanel("XGBoost - Variable Ranking",
              mainPanel(
                uiOutput("variable_ranking_image")
              )
     ),
-    tabPanel("Predicted vs. Observed", # New tab
+    tabPanel("XGBoost Predicted vs. Observed", # New tab
              mainPanel(
-               plotOutput("r2_plot"),
-               plotOutput("rmse_plot")
+               uiOutput("pvo_plot")
              )
     )
   )
@@ -142,31 +141,12 @@ server <- function(input, output) {
   })
   
   output$variable_ranking_image <- renderUI({
-    tags$img(src = "variablerank.png", alt = "Variable Ranking", width = "100%")
+    tags$img(src = ".../shiny/var_importance_xgboost.png", alt = "Variable Ranking", width = "100%")
   })
   
-  output$r2_plot <- renderPlot({
-    ggplot(predictions_data, aes(x = observed, y = predicted)) +
-      geom_point() +
-      geom_abline(intercept = 0, slope = 1, color = "red") + # Add a 1:1 line
-      labs(
-        x = "Observed Yield",
-        y = "Predicted Yield",
-        title = paste("Predicted vs. Observed Yield (R2 = ", round(unique(predictions_data$R2), 2), ")") #Include R2 in title
-      ) +
-      theme_minimal()
-  })
   
-  output$rmse_plot <- renderPlot({
-    ggplot(predictions_data, aes(x = observed, y = predicted)) +
-      geom_point() +
-      geom_abline(intercept = 0, slope = 1, color = "red") + # Add a 1:1 line
-      labs(
-        x = "Observed Yield",
-        y = "Predicted Yield",
-        title = paste("Predicted vs. Observed Yield (RMSE = ", round(unique(predictions_data$RMSE), 2), ")") # Include RMSE in title
-      ) +
-      theme_minimal()
+  output$pvo_plot <- renderUI({
+    tags$img(src = ".../shiny/xgb_pred_vs_obs.png", alt = "Predicted vs Observed", width = "100%")
   })
 }
 
