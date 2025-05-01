@@ -141,12 +141,12 @@ server <- function(input, output) {
   })
   
   output$variable_ranking_image <- renderUI({
-    tags$img(src = ".../shiny/var_importance_xgboost.png", alt = "Variable Ranking", width = "100%")
+    tags$img(src = "var_importance_xgboost.png", alt = "Variable Ranking", width = "100%")
   })
   
   
   output$pvo_plot <- renderUI({
-    tags$img(src = ".../shiny/xgb_pred_vs_obs.png", alt = "Predicted vs Observed", width = "100%")
+    tags$img(src = "xgb_pred_vs_obs.png", alt = "Predicted vs Observed", width = "100%")
   })
 }
 
