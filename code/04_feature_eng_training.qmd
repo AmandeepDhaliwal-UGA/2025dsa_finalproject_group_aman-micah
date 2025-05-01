@@ -36,19 +36,22 @@ library(lubridate)
 
 # Add DOY (day of year) to planting/harvest
 train_dates <- train_grouped %>%
-  mutate(
-    plant_doy = yday(date_planted),
-    harvest_doy = yday(date_harvested)
-  ) %>%
-  dplyr::select(hybrid, site, year, plant_doy, harvest_doy, yield_adj_mg_ha)
+  dplyr::select(hybrid, site, year, yield_adj_mg_ha)
 
 ```
 # Import weather data 
 
 ```{r}
-weather_f <- read_csv("../data/weather_partial.csv")
+weather_f <- read_csv("../data/weather_partial.csv") %>% 
+  clean_names() %>%
+  mutate(month = format(as.Date(as.Date(yday - 1, origin = paste0(year, "-01-01"))), "%m")) %>%
+  dplyr::select(site, year, lat, lon, month, yday, dayl_s, prcp_mm_day, srad_w_m_2, tmax_deg_c, tmin_deg_c, vp_pa)
+    
+  
 
 weather_f
+summary(weather_f)
+unique(weather_f$year)
 ```
 # Join site-year info to weather 
 
@@ -56,10 +59,10 @@ weather_f
 # Join site-year info to weather
 weather_gs <- weather_f %>%
   left_join(train_dates, by = c("site", "year")) %>%
-  filter(
-    yday >= plant_doy,
-    yday <= harvest_doy
-  )
+  filter(month != c(01, 02)) %>%
+  na.omit(yield_adj_mg_ha) 
+
+  
 
 weather_gs
 
@@ -74,80 +77,84 @@ unique(weather_gs$site)
 
 We are using degday package. 
 
+EDIT: The original plan was to use GDD as a predictor, and this was the code we developed to calculate and summarize by month, using the double sien method. However, due to the technical difficulties with pulling weather for 2024, we had to use the data that Umar shared, which was already summarized by month and thus we were unable to use that to compute GDDs. 
+
+The code below was left as comments for documentation purposes.
+
 ```{r}
 #install.packages("degday")
-library(degday)
+#library(degday)
 ```
 
 
 ```{r Add next day's tmin (required for the double sine model)}
-weather_gdd <- weather_gs %>%
-  arrange(site, year, hybrid, yday) %>%
-  group_by(site, year, hybrid) %>%
-  mutate(tmin_next = lead(tmin_deg_c, 1)) %>%
-  ungroup()
+#weather_gdd <- weather_gs %>%
+#  arrange(site, year, hybrid, yday) %>%
+#  group_by(site, year, hybrid) %>%
+#  mutate(tmin_next = lead(tmin_deg_c, 1)) %>%
+#  ungroup()
 
-weather_gdd
+#weather_gdd
 ```
 
 
 ```{r Calculate gdd_dbl_sine with {degday}}
 
 
-unique_sites <- unique(weather_gdd$site)
+#unique_sites <- unique(weather_gdd$site)
 
-gdd_list <- lapply(unique_sites, function(s) {
-  weather_gdd %>%
-    filter(site == s) %>%
-    group_by(site, year, hybrid) %>%
-    arrange(yday) %>%
-    mutate(
-      tmin_next = lead(tmin_deg_c),
-      gdd_dbl_sine = dd_dbl_sine(tmin_deg_c, tmax_deg_c, tmin_next, 10, 100)
-    )
-})
+#gdd_list <- lapply(unique_sites, function(s) {
+#  weather_gdd %>%
+#    filter(site == s) %>%
+#    group_by(site, year, hybrid) %>%
+#    arrange(yday) %>%
+#    mutate(
+#      tmin_next = lead(tmin_deg_c),
+#      gdd_dbl_sine = dd_dbl_sine(tmin_deg_c, tmax_deg_c, tmin_next, 10, 100)
+#    )
+#})
 
-gdd_list
+#gdd_list
 
 ```
 
 
 
 ```{r bind rows}
-weather_gdd_final <- bind_rows(gdd_list)
+#weather_gdd_final <- bind_rows(gdd_list)
 
-weather_gdd_final
+#weather_gdd_final
 
 ```
 
 ```{r}
-summary(weather_gdd_final)
+# summary(weather_gdd_final)
 ```
 # Revisiting the weather GDD
 
 
 ```{r check number of rows}
-weather_gdd_final %>%
-  filter(yday < plant_doy | yday > harvest_doy) %>%
-  nrow()
+# weather_gdd_final %>%
+#  filter(yday < plant_doy | yday > harvest_doy) %>%
+#  nrow()
 
 ```
 ```{r}
-weather_gdd_final %>%
+ weather_gs %>%
   count(site, year, hybrid) %>%
   arrange(desc(n))  # Should be ~days in growing season (e.g. 120–160)
 
 ```
 
 ```{r}
-weather_gdd_final %>%
-  filter(is.na(gdd_dbl_sine) | is.na(yield_adj_mg_ha)) %>%
-  nrow()
+#weather_gdd_final %>%
+#  filter(is.na(gdd_dbl_sine) | is.na(yield_adj_mg_ha)) %>%
+#  nrow()
 
 ```
 
 ```{r check if there are duplicates for the hybrid}
-weather_gdd_final %>%
+weather_gs %>%
   count(site, year, hybrid, yday) %>%
   filter(n > 1) %>%
   arrange(desc(n))
