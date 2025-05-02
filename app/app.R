@@ -5,7 +5,7 @@ library(tidyverse)
 library(shiny)
 library(shinyjs)
 
-weather_sheet <- read.csv("shiny/train-final-soils-weather.csv")
+weather_sheet <- read.csv("train-final-soils-weather.csv")
 #predictions_data <- read.csv("shiny/DATASET_HERE.csv") # Load the new dataset
 
 # Define the soil property options with cleaner names
@@ -48,7 +48,7 @@ ui <- fluidPage(
       }
     "))
   ),
-  tags$div(class = "title", "CRSS 8030 Final Project - XGBoost"),
+  tags$div(class = "title", "CRSS 8030 Final Project - Random Forest"),
   tags$div(class = "subtitle", "Amandeep Dhaliwal and Micah Jones"),
   navbarPage(
     "", # Empty title for navbarPage to avoid redundancy
@@ -82,12 +82,12 @@ ui <- fluidPage(
                )
              )
     ),
-    tabPanel("XGBoost - Variable Ranking",
+    tabPanel("Random Forest - Variable Ranking",
              mainPanel(
                uiOutput("variable_ranking_image")
              )
     ),
-    tabPanel("XGBoost Predicted vs. Observed", # New tab
+    tabPanel("Random Forest Predicted vs. Observed", # New tab
              mainPanel(
                uiOutput("pvo_plot")
              )
@@ -141,12 +141,14 @@ server <- function(input, output) {
   })
   
   output$variable_ranking_image <- renderUI({
-    tags$img(src = "var_importance_xgboost.png", alt = "Variable Ranking", width = "100%")
+    tags$img(src = "rf_variable_importance_full.png", alt = "Variable Ranking", width = "100%")
   })
   
-  
+ # output$pvo_plot <- renderImage({
+  #  list(src = ".../app/", contentType = "image/png", width = "100%")
+  #}, deleteFile = FALSE)
   output$pvo_plot <- renderUI({
-    tags$img(src = "xgb_pred_vs_obs.png", alt = "Predicted vs Observed", width = "100%")
+    tags$img(src = "rf_pred_obs_plot.png", alt = "Predicted vs Observed", width = "100%")
   })
 }
 
