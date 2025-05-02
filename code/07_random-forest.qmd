@@ -114,7 +114,7 @@ weather_recipe <-
   recipe(yield_adj_mg_ha ~ .,
          data = weather_train) %>%
   # Removing year and site  
-    step_rm(
+    step_rm( 
             year,       # Remove year identifier
     site,       # Remove site identifier
     hybrid, # Remove hybrid; non-numeric
@@ -530,3 +530,82 @@ saveRDS(final_spec, file = "../output/final_rf_strength_model.rds")
 saveRDS(weather_prep, file = "../output/final_rf_strength_weather_recipe_prep.rds")
 
 ```
+
+
+
+```{r fit model to test}
+
+# Load the test data sheet to run predictions on
+prediction_data <- read_csv("../data/processed/test-data-cleaned.csv")
+
+prediction_data
+```
+
+```{r}
+# Create a workflow bundling the model specification and recipe
+workflow_fit <- workflow() %>%
+  add_model(final_spec) %>%
+  add_recipe(weather_recipe)
+```
+
+```{r}
+
+# Fit the workflow to your training data
+fitted_workflow <- fit(workflow_fit, data = weather)
+```
+
+```{r}
+# Make predictions using the *fitted* workflow
+predictions <- predict(fitted_workflow, prediction_data)
+```
+
+```{r}
+# Add the predictions as a new column to the new data
+prediction_data %>% 
+  mutate(yield = predictions) %>%
+  unnest() %>%
+  mutate(yield = .pred) %>%
+  dplyr::select(-.pred) %>%
+  dplyr::select(yield, everything()) %>%
+  dplyr::select(hybrid, everything()) %>%
+  dplyr::select(site, everything()) %>%
+  dplyr::select(year, everything()) %>%
+  write_csv("../data/processed/predictions.csv")
+```
+
+
+```{r}
+predictions <-
+  read_csv("../data/processed/predictions.csv")
+
+glimpse(predictions)
+```
+
+```{r}
+submission <- read.csv("../data/raw/testing_submission.csv")
+
+submission
+
+```
+
+```{r}
+pred_clean <- predictions %>%
+  dplyr::select(year, site, hybrid, yield) %>%
+  rename(yield_mg_ha = yield) 
+  
+```
+
+```{r}
+pred_clean %>%
+  left_join(submission)
+unique(pred_clean$year)
+```
+
+```{r}
+summary(pred_clean)
+```
+```{r}
+pred_clean %>%
+  write_csv("../data/processed/testing-submission-rf.csv")
+```
+

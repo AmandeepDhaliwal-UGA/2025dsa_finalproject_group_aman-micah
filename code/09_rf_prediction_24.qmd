@@ -1,0 +1,95 @@
+---
+title: "09_rf_prediction_24"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(tidyverse)
+library(janitor)
+library(dplyr)
+library(tidyr)
+library(sf)
+library(ggplot2)
+library(viridis)
+library(gstat)
+library(raster)
+library(stars)
+library(cubelyr)
+
+```
+
+```{r}
+field <- read.csv("../data/processed/testing_weather_2024_only_.csv") 
+
+field
+```
+```{r}
+field_w <- field %>%
+  dplyr::select(-X, -yield, -lat, -lon) %>%
+  na.omit(soilpH, om_pct, soilk_ppm, soilp_ppm)
+
+summary(field_w)
+
+
+```
+
+```{r}
+summary(field
+        )
+```
+
+
+
+```{r}
+weatherx <- read_csv("../data/processed/training-data-ml-ready.csv")
+
+weatherx
+```
+
+```{r}
+glimpse(field_w)
+```
+
+```{r}
+glimpse(weatherx)
+```
+```{r reconcile column names}
+library(dplyr)
+library(stringr)
+
+# Clean and rename columns
+names(field_w) <- names(field_w) %>%
+  # replace dots with underscores
+  str_replace_all("\\.", "_") %>%
+  # replace _srad_wm2_ with _srad_w_m_2_
+  str_replace_all("srad_wm2", "srad_w_m_2") %>%
+  str_replace_all("tmax_c", "tmax_deg_c") %>%
+  str_replace_all("tmin_c", "tmin_deg_c") %>%
+  str_replace_all("vp_pa", "vp_pa") %>%  # same already, but ensures no . format
+  str_replace_all("prcp_mm", "prcp_mm_day") %>%  # assuming day-wise here
+  str_replace_all("dayl_s", "dayl_s")  # already good, just to match style
+
+```
+
+
+```{r adding back junk columns to appease the recipe}
+field_clean <- field_w %>% 
+  mutate(grain_moisture = 0) %>%
+  mutate(days_to_harvest = 0)
+
+```
+
+```{r}
+glimpse(field_clean)
+```
+```{r}
+field_clean %>%
+  write.csv("../data/processed/test-data-cleaned.csv")
+```
+
+```{r}
+f <- read.csv(("../data/processed/test-data-cleaned.csv"))
+```
+
